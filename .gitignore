@@ -4,9 +4,6 @@
 # IDEA project
 .idea
 
-# Config files
-*.conf
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
