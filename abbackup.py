@@ -1,12 +1,12 @@
 #!/usr/bin/python3
 
-# abbackup
-# Create and upload backups to a FTP Server. It also sends an email when task is done
-# Author            Santiago Faci <santi@arkabytes.com>
-#
-# Version           0.1
-# Date              2018-02-16
-# Python version    3.5
+"""abbackup
+ Create and upload backups to a FTP Server. It also sends an email when task is done
+ Author            Santiago Faci <santi@arkabytes.com>
+ Version           0.1
+ Date              2018-02-16
+ Python version    3.5
+"""
 
 import configparser
 import argparse
@@ -39,23 +39,33 @@ OPTION_FROM = 'from'
 OPTION_TO = 'to'
 OPTION_MESSAGE = 'message'
 OPTION_BACKUP_NAME = 'name'
-
 LOG_FORMAT = '%(asctime)-15s:%(levelname)s:%(message)s'
+
 # Initialize logging system
 logging.basicConfig(filename=LOG_FILE, format=LOG_FORMAT, level=logging.INFO)
 
 
-def send_email(email_body, email_subject, email_from, email_to):
-    message = MIMEText(email_body)
-    message['Subject'] = email_subject
-    message['From'] = email_from
-    message['To'] = email_to
+def send_email(message, subject, _from, to):
+    """Send an email to notify something"""
+    email = MIMEText(message)
+    email['Subject'] = subject
+    email['From'] = _from
+    email['To'] = to
 
     print("Sending email notification . . .")
     smtp = smtplib.SMTP('localhost')
-    smtp.sendmail(email_from, [email_to], message.as_string())
+    smtp.sendmail(_from, [to], email.as_string())
     print("Email sent successfully")
     smtp.quit()
+
+
+def configure_logging():
+    """Set up logging configuration"""
+    logging.basicConfig(format=LOG_FORMAT, level=logging.INFO,
+                        handlers=[
+                            logging.FileHandler(LOG_FILE),
+                            logging.StreamHandler()
+                        ])
 
 
 parser = argparse.ArgumentParser()
@@ -79,7 +89,9 @@ if not os.path.isfile(CONFIG_FILE):
 
 if args.directory_name:
 
-    ''' Config file checking '''
+    '''
+     Config file checking 
+    '''
     # Reading config file to connect to FTP server
     config = configparser.ConfigParser()
     config.sections()
