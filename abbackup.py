@@ -1,4 +1,13 @@
 #!/usr/bin/python3
+
+# abbackup
+# Create and upload backups to a FTP Server. It also sends an email when task is done
+# Author            Santiago Faci <santi@arkabytes.com>
+#
+# Version           0.1
+# Date              2018-02-16
+# Python version    3.5
+
 import configparser
 import argparse
 import ftplib
@@ -16,7 +25,8 @@ from datetime import date
 
 
 CWD = os.getcwd()
-CONFIG_FILE = 'abbackup.conf'
+LOG_FILE = os.path.join(CWD, 'abbackup.log')
+CONFIG_FILE = os.path.join(CWD, 'abbackup.conf')
 CONFIG_FTP_SECTION = 'ftp_server'
 CONFIG_EMAIL_SECTION = 'email_settings'
 CONFIG_BACKUP_SECTION = 'backup'
@@ -27,22 +37,12 @@ OPTION_PASSWORD = 'password'
 OPTION_SUBJECT = 'subject'
 OPTION_FROM = 'from'
 OPTION_TO = 'to'
-OPTION_BODY = 'body'
+OPTION_MESSAGE = 'message'
 OPTION_BACKUP_NAME = 'name'
 
 LOG_FORMAT = '%(asctime)-15s:%(levelname)s:%(message)s'
 # Initialize logging system
-logging.basicConfig(filename='abbackup.log', format=LOG_FORMAT, level=logging.INFO)
-
-
-def log(message, severity, backup_name, backup_file):
-    extra_data = {'backup_name': backup_name, 'backup_file': backup_file}
-    if severity == 'warning':
-        logging.warning(message, extra=extra_data)
-    if severity == 'error':
-        logging.error(message, extra=extra_data)
-    if severity == 'info':
-        logging.info(message, extra=extra_data)
+logging.basicConfig(filename=LOG_FILE, format=LOG_FORMAT, level=logging.INFO)
 
 
 def send_email(email_body, email_subject, email_from, email_to):
@@ -83,7 +83,7 @@ if args.directory_name:
     # Reading config file to connect to FTP server
     config = configparser.ConfigParser()
     config.sections()
-    config.read('abbackup.conf')
+    config.read(CONFIG_FILE)
 
     # Check if config file has the proper section
     if not config.has_section(CONFIG_FTP_SECTION):
@@ -124,7 +124,7 @@ if args.directory_name:
             email_to = args.email
         else:
             email_to = config[CONFIG_EMAIL_SECTION][OPTION_TO]
-        email_body = config[CONFIG_EMAIL_SECTION][OPTION_BODY]
+        email_body = config[CONFIG_EMAIL_SECTION][OPTION_MESSAGE]
     else:
         # No email notification
         print("No email provided to notify operations")
@@ -133,16 +133,16 @@ if args.directory_name:
     backup_filename = 'noname'
     try:
         backup_filename = backup_name + '_' + str(date.today())
-        logging.info("Starting new backup %s/%s", backup_name, backup_filename)
+        logging.info("starting new backup %s/%s", backup_name, backup_filename)
         ''' Making backup '''
         # Create zip file from directory
         shutil.make_archive(backup_filename, 'zip', args.directory_name)
-        logging.info('Backup file created')
+        logging.info('backup file created')
 
         ''' FTP Connection and upload '''
         # Connect to ftp server and upload backup file
         print("Connecting to FTP server . . .")
-        logging.info('Connecting to FTP server')
+        logging.info('connecting to FTP server')
         ftp = FTP(host, username, password, timeout=5)
         print('Login ok')
         print('Uploading file . . .')
@@ -156,17 +156,18 @@ if args.directory_name:
         ''' Email notification '''
         send_email(email_body, email_subject, email_from, email_to)
         logging.info('finished backup %s/%s', backup_name, backup_filename)
+        os.remove(backup_filename + '.zip')
     except ftplib.Error as e:
         print("Error while uploading file")
-        logging.error('Error while uploading file')
+        logging.error('error while uploading file')
         send_email('Error while uploading file', email_subject, email_from, email_to)
     except socket.timeout:
         print("FTP connection timeout excedeed")
-        logging.error('FTP connection timeout excedeed')
+        logging.error('ftp connection timeout excedeed')
         send_email('FTP connection timeout excedeed', email_subject, email_from, email_to)
     except MessageError:
         print("Error while sending notification error")
-        logging.error('Error while sending notification error', 'error')
+        logging.error('error while sending notification error')
     except ConnectionRefusedError:
-        print("Error while connection with the smtp server")
-        logging.error('Error while connection with the smtp server', 'error')
+        print("Error while connection with the smtp server. Connection refused!")
+        logging.error('error while connection with the smtp server:connection refused!')
