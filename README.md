@@ -4,7 +4,7 @@ Python script to create backups
 
 # About
 
-abbackup is a Python script created to make and upload backups to a FTP server. It also notifies, sending an e-mail, when job is done.
+**abbackup** is a Python script created to make and upload backups to a FTP server. It also notifies, sending an e-mail, when job is done.
 The main idea is to run it as a cron job to automate backup creation in a server or wherever you have important data you want to backup.
 
 # Features
@@ -28,7 +28,7 @@ The main idea is to run it as a cron job to automate backup creation in a server
 
 #### Notice
 
-abbackup is developed under Linux and it has not been tested under any other Operating System. Anyway, it should run without problems under any Unix-friendly OS.
+**abbackup** is developed under Linux and it has not been tested under any other Operating System. Anyway, it should run without problems under any Unix-friendly OS.
 
 # Installation
 
@@ -79,7 +79,7 @@ You can run it as a cron job writting next line in your crontab if you want, for
 
 # Documentation
 
-By the moment there is no documentation about abbackup
+By the moment there is no documentation about **abbackup**.
 
 # Author
 
