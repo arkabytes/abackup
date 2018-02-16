@@ -65,7 +65,7 @@ optional arguments:
                         Directory to back up
 ```
 
-Currently you only can run the script passing `--directory-name` argument:
+Currently you can only run the script passing `--directory-name` argument:
 
 ```bash
 santi@zenbook:$ ./abbackup.py --directory-name path/to/a/dirrectory
