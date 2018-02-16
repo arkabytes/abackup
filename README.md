@@ -47,8 +47,8 @@ password = your_ftp_password
 
 [email_settings]
 subject = Backup done
-from = non-reply@arkabytes.com
-to = santiago.faci@gmail.com
+from = non-reply@yourdomain.com
+to = user@yourdomain.com
 message = Backup done successfully
 ```
 
