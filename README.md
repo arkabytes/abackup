@@ -33,7 +33,8 @@ The main idea is to run it as a cron job to automate backup creation in a server
 # Installation
 
 abbackup doest no require any installation process. It is only a Python script that you can run directly.
-The only thing you need is to customize the configuration file `abbackup.conf`. You can find a template in this repository:
+The only thing you need is to customize the configuration file `abbackup.conf`. You can find a template below.
+> Notice that abbackup generate a log file with some debug information in the same directory where you run the script.
 
 ```ini
 [backup]
