@@ -25,8 +25,9 @@ from datetime import date
 
 
 CWD = os.getcwd()
-LOG_FILE = os.path.join(CWD, 'abbackup.log')
-CONFIG_FILE = os.path.join(CWD, 'abbackup.conf')
+CURRENT_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
+LOG_FILE = os.path.join(CURRENT_DIRECTORY, 'abbackup.log')
+CONFIG_FILE = os.path.join(CURRENT_DIRECTORY, 'abbackup.conf')
 CONFIG_FTP_SECTION = 'ftp_server'
 CONFIG_EMAIL_SECTION = 'email_settings'
 CONFIG_BACKUP_SECTION = 'backup'
