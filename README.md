@@ -13,12 +13,12 @@ The main idea is to run it as a cron job to automate backup creation in a server
   * Upload automatically the backup to a FTP server
   * Notify sending an e-email when job is done
   * Register activity in a log file
+  * List backups (from FTP server)
+  * Notify sending an e-mail also when something was wrong
   
 ##### TODO
   
   * Backup rotation in the FTP server
-  * Notify sending an e-mail also when something was wrong
-  * List backups (from FTP server)
   * And more . . .
 
 # Requirements
@@ -34,7 +34,6 @@ The main idea is to run it as a cron job to automate backup creation in a server
 
 abbackup doest no require any installation process. It is only a Python script that you can run directly.
 The only thing you need is to customize the configuration file `abbackup.conf`. You can find a template below.
-> Notice that abbackup generate a log file with some debug information in the same directory where you run the script.
 
 ```ini
 [backup]
@@ -53,17 +52,28 @@ to = user@yourdomain.com
 message = Backup done successfully
 ```
 
+You can download a packaged release in the [releases section](https://github.com/arkabytes/abbackup/releases)
+
+> Notice that abbackup generate a log file with some debug information in the same directory where you run the script.
+
 # Usage
 
 ```bash
-abbackup 0.1: A backup tool (http://www.github.com/arkabytes/abbackup)
+abbackup 0.2: A backup tool (http://www.github.com/arkabytes/abbackup)
 usage: abbackup.py [-h] [--directory-name DIRECTORY_NAME] [--name NAME]
-                   [--email EMAIL_ADDRESS] [--list-backups [BACKUP_NAME]]
+                   [--email EMAIL_ADDRESS] [--list-backups] [-v]
 
 optional arguments:
- -h, --help            show this help message and exit
+  -h, --help            show this help message and exit
   --directory-name DIRECTORY_NAME
                         Directory to back up
+  --name NAME           Backup name
+  --email EMAIL_ADDRESS
+                        Overrides the default email address for notification
+                        purpose
+  --list-backups        List backups (from config name or an specified one
+                        passing the --name argument)
+  -v                    Print debug information
 ```
 
 Currently you can only run the script passing `--directory-name` argument:
