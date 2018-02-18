@@ -3,7 +3,7 @@
 """abbackup
  Create and upload backups to a FTP Server. It also sends an email when task is done
  Author            Santiago Faci <santi@arkabytes.com>
- Version           0.1
+ Version           0.2
  Date              2018-02-16
  Python version    3.5
 """
@@ -24,6 +24,7 @@ from ftplib import FTP
 from datetime import date
 
 
+VERSION = '0.2'
 CWD = os.getcwd()
 CURRENT_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
 LOG_FILE = os.path.join(CURRENT_DIRECTORY, 'abbackup.log')
@@ -31,38 +32,91 @@ CONFIG_FILE = os.path.join(CURRENT_DIRECTORY, 'abbackup.conf')
 CONFIG_FTP_SECTION = 'ftp_server'
 CONFIG_EMAIL_SECTION = 'email_settings'
 CONFIG_BACKUP_SECTION = 'backup'
-OPTION_HOST = 'host'
-OPTION_PORT = 'port'
-OPTION_USERNAME = 'username'
-OPTION_PASSWORD = 'password'
-OPTION_SUBJECT = 'subject'
-OPTION_FROM = 'from'
-OPTION_TO = 'to'
-OPTION_MESSAGE = 'message'
-OPTION_BACKUP_NAME = 'name'
-LOG_FORMAT = '%(asctime)-15s:%(levelname)s:%(message)s'
+HOST = 'host'
+PORT = 'port'
+USERNAME = 'username'
+PASSWORD = 'password'
+SUBJECT = 'subject'
+FROM = 'from'
+TO = 'to'
+MESSAGE = 'message'
+BACKUP_NAME = 'name'
+#LOG_FORMAT = '%(asctime)-15s:%(levelname)s:%(message)s'
+LOG_FORMAT = '%(levelname)s:%(message)s'
+DEBUG = False
 
-# Initialize logging system
-logging.basicConfig(filename=LOG_FILE, format=LOG_FORMAT, level=logging.INFO)
+
+def check_config_file():
+    """Read and check if config file is formerly created"""
+    global config
+    config = configparser.ConfigParser()
+    config.sections()
+    config.read(CONFIG_FILE)
+
+    # Check if config file has the proper section
+    if not config.has_section(CONFIG_FTP_SECTION):
+        logging.error("Invalid config file (no '" + CONFIG_FTP_SECTION + "' section)")
+        exit()
+
+    # Check if config file provided all the needed information to connect to the FTP server
+    if not config.has_option(CONFIG_FTP_SECTION, HOST) or \
+            not config.has_option(CONFIG_FTP_SECTION, PORT) or \
+            not config.has_option(CONFIG_FTP_SECTION, USERNAME) or \
+            not config.has_option(CONFIG_FTP_SECTION, PASSWORD):
+        logging.error("Invalid config file (check syntax)")
+        exit()
 
 
-def send_email(message, subject, _from, to):
-    """Send an email to notify something"""
-    email = MIMEText(message)
-    email['Subject'] = subject
-    email['From'] = _from
-    email['To'] = to
+def get_server_configuration():
+    """Get server configuration parameters from config file"""
+    global server_config
+    server_config = dict()
+    # Reading config information about FTP connection
+    # TODO In the future, if abbackup support new protocols, we will have to include OPTION_PROTOCOL as a new option
+    server_config[HOST] = config[CONFIG_FTP_SECTION][HOST]
+    server_config[PORT] = config[CONFIG_FTP_SECTION][PORT]
+    server_config[USERNAME] = config[CONFIG_FTP_SECTION][USERNAME]
+    server_config[PASSWORD] = config[CONFIG_FTP_SECTION][PASSWORD]
 
-    print("Sending email notification . . .")
+    return server_config
+
+
+def get_email_configuration():
+    """Get email configuration parameters from config file"""
+    global email_config
+    email_config = dict()
+    # Reading config information about email notification
+    email_config[MESSAGE] = config[CONFIG_EMAIL_SECTION][MESSAGE]
+    email_config[SUBJECT] = config[CONFIG_EMAIL_SECTION][SUBJECT]
+    email_config[FROM] = config[CONFIG_EMAIL_SECTION][FROM]
+    email_config[TO] = config[CONFIG_EMAIL_SECTION][TO]
+
+    return email_config
+
+
+def send_email(message=None):
+    """Send a notification email to notify something"""
+    if message:
+        email = MIMEText(message)
+    else:
+        email = MIMEText(email_config[MESSAGE])
+    email['Subject'] = email_config[SUBJECT]
+    email['From'] = email_config[FROM]
+    email['To'] = email_config[TO]
+
     smtp = smtplib.SMTP('localhost')
-    smtp.sendmail(_from, [to], email.as_string())
-    print("Email sent successfully")
+    smtp.sendmail(email_config[FROM], [email_config[TO]], email.as_string())
     smtp.quit()
 
 
-def configure_logging():
-    """Set up logging configuration"""
-    logging.basicConfig(format=LOG_FORMAT, level=logging.INFO,
+def configure_logging(verbose):
+    """Set logging configuration to log into a file and to stdout"""
+    if verbose:
+        level = logging.INFO
+    else:
+        level = logging.ERROR
+
+    logging.basicConfig(format=LOG_FORMAT, level=level,
                         handlers=[
                             logging.FileHandler(LOG_FILE),
                             logging.StreamHandler()
@@ -72,75 +126,86 @@ def configure_logging():
 parser = argparse.ArgumentParser()
 parser.add_argument('--directory-name', help='Directory to back up', metavar='DIRECTORY_NAME')
 parser.add_argument('--name', help='Backup name', metavar='NAME')
-parser.add_argument('--email', help='E-mail address where notify operations', metavar='EMAIL_ADDRESS')
-parser.add_argument('--list-backups', help='List backups (all or for an specific name)', metavar="[BACKUP_NAME]")
+parser.add_argument('--email', help='Overrides the default email address for notification purpose', metavar='EMAIL_ADDRESS')
+parser.add_argument('--list-backups', help='List backups (from config name or an specified one passing the --name argument)', action="store_true")
+parser.add_argument('-v', help='Print debug information', action='store_true')
 
-print("\nabbackup 0.1: A backup tool (http://www.github.com/arkabytes/abbackup)")
+print('\nabbackup ' + VERSION + ': A backup tool (http://www.github.com/arkabytes/abbackup)')
 args = parser.parse_args()
+
+# Set DEBUG mode (or not)
+if args.v:
+    DEBUG = True
+
+# Initialize logging system
+configure_logging(DEBUG)
+
+# Global variable to store config file information
+config = None
 
 # Check if user has provided at least 1 argument (directory to make backup)
 if len(sys.argv) == 1:
-    print("No arguments provided. Execute '" + sys.argv[0] + " -h' for help")
+    logging.error("No arguments provided. Execute '" + sys.argv[0] + " -h' for help")
     exit()
 
 # Check if config file exists
 if not os.path.isfile(CONFIG_FILE):
-    print("No config file. You must to create it to provide FTP server configuration")
+    logging.error("No config file. You must to create it to provide FTP server configuration")
     exit()
 
-if args.directory_name:
+# Check and read configuration file
+check_config_file()
 
-    '''
-     Config file checking 
-    '''
-    # Reading config file to connect to FTP server
-    config = configparser.ConfigParser()
-    config.sections()
-    config.read(CONFIG_FILE)
+# Get backup name from argument or config file
+backup_name = ''
+if args.name:
+    backup_name = args.name
+else:
+    backup_name = config[CONFIG_BACKUP_SECTION][BACKUP_NAME]
 
-    # Check if config file has the proper section
-    if not config.has_section(CONFIG_FTP_SECTION):
-        print("Invalid config file (no '" + CONFIG_FTP_SECTION + "' section)")
-        print("Exiting . . .")
-        exit()
-
-    # Check if config file provided all the needed information to connect to the FTP server
-    if not config.has_option(CONFIG_FTP_SECTION, OPTION_HOST) or \
-            not config.has_option(CONFIG_FTP_SECTION, OPTION_PORT) or \
-            not config.has_option(CONFIG_FTP_SECTION, OPTION_USERNAME) or \
-            not config.has_option(CONFIG_FTP_SECTION, OPTION_PASSWORD):
-        print("Invalid config file (check syntax)")
-        print("Exiting . . .")
-        exit()
-
+"""
+LIST BACKUPS
+"""
+if args.list_backups:
     # Reading config information about ftp connection
-    host = config[CONFIG_FTP_SECTION][OPTION_HOST]
-    port = config[CONFIG_FTP_SECTION][OPTION_PORT]
-    username = config[CONFIG_FTP_SECTION][OPTION_USERNAME]
-    password = config[CONFIG_FTP_SECTION][OPTION_PASSWORD]
+    server_config = get_server_configuration()
 
-    backup_name = 'nonamebackup'
-    if args.name:
-        backup_name = args.name
-    else:
-        backup_name = config[CONFIG_BACKUP_SECTION][OPTION_BACKUP_NAME]
-
-    email_subject = None
-    email_from = None
-    email_to = None
-    email_body = None
-    # Read email config data (email address can have been introduced manually)
-    if config.has_section(CONFIG_EMAIL_SECTION):
-        email_subject = config[CONFIG_EMAIL_SECTION][OPTION_SUBJECT]
-        email_from = config[CONFIG_EMAIL_SECTION][OPTION_FROM]
-        if args.email:
-            email_to = args.email
+    logging.info('connecting to FTP server')
+    try:
+        ftp = FTP(server_config[HOST], server_config[USERNAME], server_config[PASSWORD], timeout=5)
+        results = []
+        results = ftp.nlst('./' + backup_name + '*')
+        print('Listing backups (' + backup_name + ')')
+        if len(results) > 0:
+            for result in results:
+                print(result + " " + str(round(ftp.size(result) / (1024 * 1024), 3)) + ' MB')
         else:
-            email_to = config[CONFIG_EMAIL_SECTION][OPTION_TO]
-        email_body = config[CONFIG_EMAIL_SECTION][OPTION_MESSAGE]
+            print('No backups for given name')
+    except OSError as ose:
+        logging.error('error trying to connect to FTP server. (' + ose.__str__() + ')')
+        exit()
+    except Exception as e:
+        logging.error('error trying to connect to FTP server. (' + e.__str__() + ')')
+        exit()
+    logging.info('backups listed successfully. Connection terminated')
+    exit()
+
+"""
+MAKE BACKUP
+"""
+if args.directory_name:
+    # Reading config information about ftp connection
+    server_config = get_server_configuration()
+
+    # Read email config data (email address can have been introduced manually)
+    email_config = None
+    if config.has_section(CONFIG_EMAIL_SECTION):
+        email_config = get_email_configuration()
+        if args.email:
+            email_config[TO] = args.email
     else:
         # No email notification
-        print("No email provided to notify operations")
+        logging.error("No email provided to notify operations")
         exit()
 
     backup_filename = 'noname'
@@ -154,33 +219,30 @@ if args.directory_name:
 
         ''' FTP Connection and upload '''
         # Connect to ftp server and upload backup file
-        print("Connecting to FTP server . . .")
-        logging.info('connecting to FTP server')
-        ftp = FTP(host, username, password, timeout=5)
-        print('Login ok')
-        print('Uploading file . . .')
+        logging.info("Connecting to FTP server . . .")
+        ftp = FTP(server_config[HOST], server_config[USERNAME], server_config[PASSWORD], timeout=5)
+        logging.info('Login ok')
+        logging.info('Uploading file . . .')
         ftp.storbinary('STOR ' + backup_filename + '.zip', open(backup_filename + '.zip', 'rb'))
         ftp.quit()
-        print('File uploaded')
+        logging.info('File uploaded')
         logging.info('File uploaded successfully')
 
         # TODO Remove old backup if it has been there during more than the specified amount of days in config file
 
         ''' Email notification '''
-        send_email(email_body, email_subject, email_from, email_to)
+        logging.info("Sending email notification . . .")
+        send_email()
+        logging.info("Email sent successfully")
         logging.info('finished backup %s/%s', backup_name, backup_filename)
         os.remove(backup_filename + '.zip')
     except ftplib.Error as e:
-        print("Error while uploading file")
         logging.error('error while uploading file')
-        send_email('Error while uploading file', email_subject, email_from, email_to)
+        send_email('Error while uploading file')
     except socket.timeout:
-        print("FTP connection timeout excedeed")
         logging.error('ftp connection timeout excedeed')
-        send_email('FTP connection timeout excedeed', email_subject, email_from, email_to)
+        send_email('FTP connection timeout excedeed')
     except MessageError:
-        print("Error while sending notification error")
         logging.error('error while sending notification error')
     except ConnectionRefusedError:
-        print("Error while connection with the smtp server. Connection refused!")
         logging.error('error while connection with the smtp server:connection refused!')
