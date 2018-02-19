@@ -15,11 +15,12 @@ The main idea is to run it as a cron job to automate backup creation in a server
   * Register activity in a log file
   * List backups (from FTP server)
   * Notify sending an e-mail also when something was wrong
-  
+  * Basic backup rotation in the FTP server based on the number of files you want to keep
+
 ##### TODO
   
-  * Backup rotation in the FTP server
-  * And more . . .
+  * Support for other protocols like SCP
+  * Any suggestions? [just ask](https://github.com/arkabytes/abbackup/issues)
 
 # Requirements
 
@@ -38,6 +39,7 @@ The only thing you need is to customize the configuration file `abbackup.conf`. 
 ```ini
 [backup]
 name = my_backup_name
+rotation = 2                # 0 means 'no rotation'
 
 [ftp_server]
 host = 192.168.1.7
@@ -79,13 +81,13 @@ optional arguments:
 Currently you can only run the script passing `--directory-name` argument:
 
 ```bash
-santi@zenbook:$ ./abbackup.py --directory-name path/to/a/dirrectory
+santi@zenbook:$ ./abbackup.py --directory-name path/to/a/dirrectory -v
 ``` 
 
 You can run it as a cron job writting next line in your crontab if you want, for example, create a backup once a day at midnight:
 
 ```bash
-0 0 * * * /path/to/abbackup.py --directory-name path/to/a/directory 
+0 0 * * * /path/to/abbackup.py --directory-name path/to/a/directory -v
 ```
 
 # Documentation

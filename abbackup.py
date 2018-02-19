@@ -21,7 +21,7 @@ import logging
 from email.mime.text import MIMEText
 from email.errors import MessageError
 from ftplib import FTP
-from datetime import date
+from datetime import date, datetime
 
 
 VERSION = '0.2'
@@ -32,6 +32,8 @@ CONFIG_FILE = os.path.join(CURRENT_DIRECTORY, 'abbackup.conf')
 CONFIG_FTP_SECTION = 'ftp_server'
 CONFIG_EMAIL_SECTION = 'email_settings'
 CONFIG_BACKUP_SECTION = 'backup'
+BACKUP_NAME = 'name'
+ROTATION = 'rotation'
 HOST = 'host'
 PORT = 'port'
 USERNAME = 'username'
@@ -40,7 +42,6 @@ SUBJECT = 'subject'
 FROM = 'from'
 TO = 'to'
 MESSAGE = 'message'
-BACKUP_NAME = 'name'
 #LOG_FORMAT = '%(asctime)-15s:%(levelname)s:%(message)s'
 LOG_FORMAT = '%(levelname)s:%(message)s'
 DEBUG = False
@@ -63,7 +64,7 @@ def check_config_file():
             not config.has_option(CONFIG_FTP_SECTION, PORT) or \
             not config.has_option(CONFIG_FTP_SECTION, USERNAME) or \
             not config.has_option(CONFIG_FTP_SECTION, PASSWORD):
-        logging.error("Invalid config file (check syntax)")
+        logging.error('Invalid config file (check syntax)')
         exit()
 
 
@@ -123,6 +124,15 @@ def configure_logging(verbose):
                         ])
 
 
+def get_backups_list(connection, name):
+    return connection.nlst('./' + name + '*')
+
+
+def get_backup_date(filename):
+    backup_date = filename.split('_')[1].split('.')[0]
+    return backup_date
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--directory-name', help='Directory to back up', metavar='DIRECTORY_NAME')
 parser.add_argument('--name', help='Backup name', metavar='NAME')
@@ -145,12 +155,12 @@ config = None
 
 # Check if user has provided at least 1 argument (directory to make backup)
 if len(sys.argv) == 1:
-    logging.error("No arguments provided. Execute '" + sys.argv[0] + " -h' for help")
+    logging.error("no arguments provided. Execute '" + sys.argv[0] + " -h' for help")
     exit()
 
 # Check if config file exists
 if not os.path.isfile(CONFIG_FILE):
-    logging.error("No config file. You must to create it to provide FTP server configuration")
+    logging.error('no config file. You must to create it to provide FTP server configuration')
     exit()
 
 # Check and read configuration file
@@ -162,6 +172,7 @@ if args.name:
     backup_name = args.name
 else:
     backup_name = config[CONFIG_BACKUP_SECTION][BACKUP_NAME]
+rotation_count = int(config[CONFIG_BACKUP_SECTION][ROTATION])
 
 """
 LIST BACKUPS
@@ -175,17 +186,21 @@ if args.list_backups:
         ftp = FTP(server_config[HOST], server_config[USERNAME], server_config[PASSWORD], timeout=5)
         results = []
         results = ftp.nlst('./' + backup_name + '*')
-        print('Listing backups (' + backup_name + ')')
+        if len(results) > 0:
+            backup_date = get_backup_date(results[len(results) - 1])
+        else:
+            backup_date = 'none'
+        print('listing backups (' + backup_name + ', rotation = ' + str(rotation_count) + ', last_backup = ' + backup_date + ')')
         if len(results) > 0:
             for result in results:
-                print(result + " " + str(round(ftp.size(result) / (1024 * 1024), 3)) + ' MB')
+                print(' - ' + result + ' ' + str(round(ftp.size(result) / (1024 * 1024), 3)) + ' MB')
         else:
-            print('No backups for given name')
+            print('no backups for given name')
     except OSError as ose:
         logging.error('error trying to connect to FTP server. (' + ose.__str__() + ')')
         exit()
     except Exception as e:
-        logging.error('error trying to connect to FTP server. (' + e.__str__() + ')')
+        logging.error('an exception has occurred. (' + e.__str__() + ')')
         exit()
     logging.info('backups listed successfully. Connection terminated')
     exit()
@@ -205,44 +220,57 @@ if args.directory_name:
             email_config[TO] = args.email
     else:
         # No email notification
-        logging.error("No email provided to notify operations")
+        logging.error('no email provided to notify operations')
         exit()
 
     backup_filename = 'noname'
     try:
-        backup_filename = backup_name + '_' + str(date.today())
-        logging.info("starting new backup %s/%s", backup_name, backup_filename)
+        # backup_filename: backup_name + datetime
+        backup_filename = backup_name + '_' + str(datetime.today().strftime('%Y-%m-%d %H:%M:%S'))
+        logging.info('starting new backup %s/%s', backup_name, backup_filename)
         ''' Making backup '''
         # Create zip file from directory
         shutil.make_archive(backup_filename, 'zip', args.directory_name)
+        zip_filename = backup_filename
         logging.info('backup file created')
 
         ''' FTP Connection and upload '''
         # Connect to ftp server and upload backup file
-        logging.info("Connecting to FTP server . . .")
+        logging.info('connecting to FTP server . . .')
         ftp = FTP(server_config[HOST], server_config[USERNAME], server_config[PASSWORD], timeout=5)
-        logging.info('Login ok')
+        logging.info('login ok')
         logging.info('Uploading file . . .')
-        ftp.storbinary('STOR ' + backup_filename + '.zip', open(backup_filename + '.zip', 'rb'))
-        ftp.quit()
-        logging.info('File uploaded')
-        logging.info('File uploaded successfully')
+        ftp.storbinary('STOR ' + backup_filename + '.zip', open(zip_filename + '.zip', 'rb'))
+        logging.info('file uploaded')
+        logging.info('file uploaded successfully')
 
-        # TODO Remove old backup if it has been there during more than the specified amount of days in config file
+        # Make backup rotation based on configuration file ('rotation' option)
+        logging.info('checking rotation backup')
+        if rotation_count != 0:
+            backups_list = get_backups_list(ftp, backup_name)
+            if len(backups_list) > rotation_count:
+                # Remove oldest backup from server
+                logging.info('deleting oldest backup in the server (' + backups_list[0].split('_')[1].split('.')[0] + ')')
+                ftp.delete(backups_list[0])
+
+        ftp.quit()
 
         ''' Email notification '''
-        logging.info("Sending email notification . . .")
-        send_email()
-        logging.info("Email sent successfully")
-        logging.info('finished backup %s/%s', backup_name, backup_filename)
+        try:
+            logging.info('Sending email notification . . .')
+            send_email()
+            logging.info('email sent successfully')
+            logging.info('finished backup %s/%s', backup_name, backup_filename)
+        except MessageError:
+            logging.error('error while sending notification error')
+        except ConnectionRefusedError:
+            logging.error('error while connection with the smtp server:connection refused!')
+
         os.remove(backup_filename + '.zip')
+        logging.info('removed local file (' + backup_filename + '.zip' + ')')
     except ftplib.Error as e:
         logging.error('error while uploading file')
-        send_email('Error while uploading file')
+        send_email('error while uploading file')
     except socket.timeout:
         logging.error('ftp connection timeout excedeed')
-        send_email('FTP connection timeout excedeed')
-    except MessageError:
-        logging.error('error while sending notification error')
-    except ConnectionRefusedError:
-        logging.error('error while connection with the smtp server:connection refused!')
+        send_email('ftp connection timeout excedeed')

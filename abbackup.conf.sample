@@ -1,5 +1,6 @@
 [backup]
 name = my_backup_name
+rotation = 0            # 0 means 'no rotation'
 
 [ftp_server]
 host = 192.168.1.7
