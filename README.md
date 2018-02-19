@@ -81,7 +81,7 @@ optional arguments:
 Currently you can only run the script passing `--directory-name` argument:
 
 ```bash
-santi@zenbook:$ ./abbackup.py --directory-name path/to/a/dirrectory -v
+santi@zenbook:$ ./abbackup.py --directory-name path/to/a/directory -v
 ``` 
 
 You can run it as a cron job writting next line in your crontab if you want, for example, create a backup once a day at midnight:
