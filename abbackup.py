@@ -29,10 +29,13 @@ CWD = os.getcwd()
 TMP_PATH = '/tmp/'
 CURRENT_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
 LOG_FILE = os.path.join(CURRENT_DIRECTORY, 'abbackup.log')
+
 CONFIG_FILE = os.path.join(CURRENT_DIRECTORY, 'abbackup.conf')
 CONFIG_FTP_SECTION = 'ftp_server'
 CONFIG_EMAIL_SECTION = 'email_settings'
 CONFIG_BACKUP_SECTION = 'backup'
+CONFIG_DB_SECTION = 'db'
+
 BACKUP_NAME = 'name'
 ROTATION = 'rotation'
 HOST = 'host'
@@ -43,6 +46,8 @@ SUBJECT = 'subject'
 FROM = 'from'
 TO = 'to'
 MESSAGE = 'message'
+BACKEND = 'backend'
+
 #LOG_FORMAT = '%(asctime)-15s:%(levelname)s:%(message)s'
 LOG_FORMAT = '%(levelname)s:%(message)s'
 DEBUG = False
@@ -96,6 +101,20 @@ def get_email_configuration():
     return email_config
 
 
+def get_db_configuration():
+    """Get database configuration parameters from config file"""
+    global db_config
+    db_config = dict()
+    # Reading config information about databases
+    db_config[BACKEND] = config[CONFIG_DB_SECTION][BACKEND]
+    db_config[HOST] = config[CONFIG_DB_SECTION][HOST]
+    db_config[PORT] = config[CONFIG_DB_SECTION][PORT]
+    db_config[USERNAME] = config[CONFIG_DB_SECTION][USERNAME]
+    db_config[PASSWORD] = config[CONFIG_DB_SECTION][PASSWORD]
+
+    return email_config
+
+
 def send_email(message=None):
     """Send a notification email to notify something"""
     if message:
@@ -137,6 +156,7 @@ def get_backup_date(filename):
 parser = argparse.ArgumentParser()
 parser.add_argument('--directory-name', help='Directory to back up', metavar='DIRECTORY_NAME')
 parser.add_argument('--name', help='Backup name', metavar='NAME')
+parser.add_argument('--databases', help='Include databases backup', action='store_true')
 parser.add_argument('--email', help='Overrides the default email address for notification purpose', metavar='EMAIL_ADDRESS')
 parser.add_argument('--list-backups', help='List backups (from config name or an specified one passing the --name argument)', action="store_true")
 parser.add_argument('-v', help='Print debug information', action='store_true')
@@ -256,6 +276,8 @@ if args.directory_name:
 
         ftp.quit()
 
+        # TODO Send email at the very end of the script when ftp/sql backups have finished
+        # TODO Then, abbackup will be able to notify if both (or not) are finished successfully
         ''' Email notification '''
         try:
             logging.info('Sending email notification . . .')
@@ -275,3 +297,23 @@ if args.directory_name:
     except socket.timeout:
         logging.error('ftp connection timeout excedeed')
         send_email('ftp connection timeout excedeed')
+
+"""
+DATABASES BACKUP (all of them)
+"""
+if args.databases:
+    db_config = get_db_configuration()
+
+    logging.info('preparing databases backup . . .')
+
+    if db_config[BACKEND] == 'mysql':
+        logging.info('backing up mysql databases')
+        db_backup_command = 'mysqldump -h ' + db_config[HOST] + ' --port ' + db_config[PORT] + ' -u ' + db_config[USERNAME] + ' -p' \
+                  + db_config[PASSWORD] + ' --all-databases > ' + TMP_PATH + 'script.sql'
+        os.system(db_backup_command)
+    elif db_config[BACKEND] == 'postgresql':
+        logging.info('backing up postgresql databases')
+        # TODO backup postgrel databases
+
+
+    logging.info('databases backup ready')
