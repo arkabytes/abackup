@@ -26,6 +26,7 @@ from datetime import date, datetime
 
 VERSION = '0.2'
 CWD = os.getcwd()
+TMP_PATH = '/tmp/'
 CURRENT_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
 LOG_FILE = os.path.join(CURRENT_DIRECTORY, 'abbackup.log')
 CONFIG_FILE = os.path.join(CURRENT_DIRECTORY, 'abbackup.conf')
@@ -230,7 +231,7 @@ if args.directory_name:
         logging.info('starting new backup %s/%s', backup_name, backup_filename)
         ''' Making backup '''
         # Create zip file from directory
-        shutil.make_archive(backup_filename, 'zip', args.directory_name)
+        shutil.make_archive(TMP_PATH + backup_filename, 'zip', args.directory_name)
         zip_filename = backup_filename
         logging.info('backup file created')
 
@@ -240,7 +241,7 @@ if args.directory_name:
         ftp = FTP(server_config[HOST], server_config[USERNAME], server_config[PASSWORD], timeout=5)
         logging.info('login ok')
         logging.info('Uploading file . . .')
-        ftp.storbinary('STOR ' + backup_filename + '.zip', open(zip_filename + '.zip', 'rb'))
+        ftp.storbinary('STOR ' + backup_filename + '.zip', open(TMP_PATH + zip_filename + '.zip', 'rb'))
         logging.info('file uploaded')
         logging.info('file uploaded successfully')
 
@@ -266,7 +267,7 @@ if args.directory_name:
         except ConnectionRefusedError:
             logging.error('error while connection with the smtp server:connection refused!')
 
-        os.remove(backup_filename + '.zip')
+        os.remove(TMP_PATH + backup_filename + '.zip')
         logging.info('removed local file (' + backup_filename + '.zip' + ')')
     except ftplib.Error as e:
         logging.error('error while uploading file')
