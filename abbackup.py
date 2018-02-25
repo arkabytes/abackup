@@ -145,7 +145,7 @@ def configure_logging(verbose):
 
 
 def get_backups_list(connection, name):
-    return connection.nlst('./' + name + '*')
+    return connection.nlst(name + '*')
 
 
 def get_backup_date(filename):
@@ -206,7 +206,8 @@ if args.list_backups:
     try:
         ftp = FTP(server_config[HOST], server_config[USERNAME], server_config[PASSWORD], timeout=5)
         results = []
-        results = ftp.nlst('./' + backup_name + '*')
+        results = ftp.nlst(backup_name + '*')
+        #ftp.retrlines('LIST ' + backup_name + '*', results.append)
         if len(results) > 0:
             backup_date = get_backup_date(results[len(results) - 1])
         else:
@@ -214,7 +215,11 @@ if args.list_backups:
         print('listing backups (' + backup_name + ', rotation = ' + str(rotation_count) + ', last_backup = ' + backup_date + ')')
         if len(results) > 0:
             for result in results:
-                print(' - ' + result + ' ' + str(round(ftp.size(result) / (1024 * 1024), 3)) + ' MB')
+                try:
+                    # size command is not standarized (no every ftp server supports it)
+                    print(' - ' + result + ' ' + str(round(ftp.size(result) / (1024 * 1024), 3)) + ' MB')
+                except:
+                    print(' - ' + result + ' ? MB')
         else:
             print('no backups for given name')
     except OSError as ose:
@@ -224,6 +229,7 @@ if args.list_backups:
         logging.error('an exception has occurred. (' + e.__str__() + ')')
         exit()
     logging.info('backups listed successfully. Connection terminated')
+    ftp.quit()
     exit()
 
 """
@@ -247,7 +253,7 @@ if args.directory_name:
     backup_filename = 'noname'
     try:
         # backup_filename: backup_name + datetime
-        backup_filename = backup_name + '_' + str(datetime.today().strftime('%Y-%m-%d %H:%M:%S'))
+        backup_filename = backup_name + '_' + str(datetime.today().strftime('%Y-%m-%d_%H:%M:%S'))
         logging.info('starting new backup %s/%s', backup_name, backup_filename)
         ''' Making backup '''
         # Create zip file from directory
@@ -266,7 +272,7 @@ if args.directory_name:
         logging.info('file uploaded successfully')
 
         # Make backup rotation based on configuration file ('rotation' option)
-        logging.info('checking rotation backup')
+        logging.info('checking rotation backup . . .')
         if rotation_count != 0:
             backups_list = get_backups_list(ftp, backup_name)
             if len(backups_list) > rotation_count:
@@ -280,7 +286,7 @@ if args.directory_name:
         # TODO Then, abbackup will be able to notify if both (or not) are finished successfully
         ''' Email notification '''
         try:
-            logging.info('Sending email notification . . .')
+            logging.info('sending email notification . . .')
             send_email()
             logging.info('email sent successfully')
             logging.info('finished backup %s/%s', backup_name, backup_filename)
