@@ -144,28 +144,40 @@ def configure_logging(verbose):
                         ])
 
 
-def get_backups_list(connection, name):
-    return connection.nlst(name + '*')
+def get_backups_list(connection, name, extension):
+    """Get a list containing all the filenames for an specified backup name"""
+    return connection.nlst(name + '*.' + extension)
+
+
+def rotate_backup(connection, name, extension):
+    """Rotate an specified backup (zip or sql)"""
+    backups = get_backups_list(connection, name, extension)
+    if len(backups) > rotation_count:
+        # Remove oldest backup from server
+        logging.info('deleting oldest backup in the server (' + backups[0].split('_')[1].split('.')[0] + ')')
+        ftp.delete(backups[0])
 
 
 def get_backup_date(filename):
+    """Get the date for an specified backup filename"""
     backup_date = filename.split('_')[1].split('.')[0]
     return backup_date
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--directory-name', help='Directory to back up', metavar='DIRECTORY_NAME')
-parser.add_argument('--name', help='Backup name', metavar='NAME')
-parser.add_argument('--databases', help='Include databases backup', action='store_true')
-parser.add_argument('--email', help='Overrides the default email address for notification purpose', metavar='EMAIL_ADDRESS')
-parser.add_argument('--list-backups', help='List backups (from config name or an specified one passing the --name argument)', action="store_true")
-parser.add_argument('-v', help='Print debug information', action='store_true')
+parser.add_argument('-n', '--name', help='Backup name', metavar='NAME')
+backup = parser.add_mutually_exclusive_group(required=True)
+backup.add_argument('-d', '--directory-name', help='Create backup from the specified directory', metavar='DIRECTORY_NAME')
+backup.add_argument('-b', '--databases', help='Backup databases using configuration file', action='store_true')
+parser.add_argument('-e', '--email', help='Overrides the default email address from config file (for notification purpose)', metavar='EMAIL_ADDRESS')
+parser.add_argument('-l', '--list-backups', help='List backups (from config name or an specified one passing the --name argument)', action="store_true")
+parser.add_argument('-v', '--verbose', help='Print debug information', action='store_true')
 
 print('\nabbackup ' + VERSION + ': A backup tool (http://www.github.com/arkabytes/abbackup)')
 args = parser.parse_args()
 
 # Set DEBUG mode (or not)
-if args.v:
+if args.verbose:
     DEBUG = True
 
 # Initialize logging system
@@ -203,11 +215,11 @@ if args.list_backups:
     server_config = get_server_configuration()
 
     logging.info('connecting to FTP server')
+    ftp = None
     try:
         ftp = FTP(server_config[HOST], server_config[USERNAME], server_config[PASSWORD], timeout=5)
         results = []
         results = ftp.nlst(backup_name + '*')
-        #ftp.retrlines('LIST ' + backup_name + '*', results.append)
         if len(results) > 0:
             backup_date = get_backup_date(results[len(results) - 1])
         else:
@@ -232,94 +244,91 @@ if args.list_backups:
     ftp.quit()
     exit()
 
-"""
-MAKE BACKUP
-"""
-if args.directory_name:
-    # Reading config information about ftp connection
-    server_config = get_server_configuration()
+# User has to select directory_name, databases or both
+if not args.directory_name or not args.databases:
+    logging.error('no operation selected. Nothing to do')
+    exit()
 
-    # Read email config data (email address can have been introduced manually)
-    email_config = None
-    if config.has_section(CONFIG_EMAIL_SECTION):
-        email_config = get_email_configuration()
-        if args.email:
-            email_config[TO] = args.email
-    else:
-        # No email notification
-        logging.error('no email provided to notify operations')
-        exit()
-
-    backup_filename = 'noname'
-    try:
-        # backup_filename: backup_name + datetime
-        backup_filename = backup_name + '_' + str(datetime.today().strftime('%Y-%m-%d_%H:%M:%S'))
-        logging.info('starting new backup %s/%s', backup_name, backup_filename)
-        ''' Making backup '''
-        # Create zip file from directory
-        shutil.make_archive(TMP_PATH + backup_filename, 'zip', args.directory_name)
-        zip_filename = backup_filename
-        logging.info('backup file created')
-
-        ''' FTP Connection and upload '''
-        # Connect to ftp server and upload backup file
-        logging.info('connecting to FTP server . . .')
-        ftp = FTP(server_config[HOST], server_config[USERNAME], server_config[PASSWORD], timeout=5)
-        logging.info('login ok')
-        logging.info('Uploading file . . .')
-        ftp.storbinary('STOR ' + backup_filename + '.zip', open(TMP_PATH + zip_filename + '.zip', 'rb'))
-        logging.info('file uploaded')
-        logging.info('file uploaded successfully')
-
-        # Make backup rotation based on configuration file ('rotation' option)
-        logging.info('checking rotation backup . . .')
-        if rotation_count != 0:
-            backups_list = get_backups_list(ftp, backup_name)
-            if len(backups_list) > rotation_count:
-                # Remove oldest backup from server
-                logging.info('deleting oldest backup in the server (' + backups_list[0].split('_')[1].split('.')[0] + ')')
-                ftp.delete(backups_list[0])
-
-        ftp.quit()
-
-        # TODO Send email at the very end of the script when ftp/sql backups have finished
-        # TODO Then, abbackup will be able to notify if both (or not) are finished successfully
-        ''' Email notification '''
-        try:
-            logging.info('sending email notification . . .')
-            send_email()
-            logging.info('email sent successfully')
-            logging.info('finished backup %s/%s', backup_name, backup_filename)
-        except MessageError:
-            logging.error('error while sending notification error')
-        except ConnectionRefusedError:
-            logging.error('error while connection with the smtp server:connection refused!')
-
-        os.remove(TMP_PATH + backup_filename + '.zip')
-        logging.info('removed local file (' + backup_filename + '.zip' + ')')
-    except ftplib.Error as e:
-        logging.error('error while uploading file')
-        send_email('error while uploading file')
-    except socket.timeout:
-        logging.error('ftp connection timeout excedeed')
-        send_email('ftp connection timeout excedeed')
+# backup_filename: backup_name + datetime
+backup_filename = backup_name + '_' + str(datetime.today().strftime('%Y-%m-%d_%H:%M:%S'))
 
 """
-DATABASES BACKUP (all of them)
+MAKE BACKUP / DATABASES
 """
+# Reading config information about ftp connection
+server_config = get_server_configuration()
+# Reading config information about databases (if proceed)
 if args.databases:
     db_config = get_db_configuration()
 
-    logging.info('preparing databases backup . . .')
+# Read email config data (email address can have been introduced manually)
+email_config = None
+if config.has_section(CONFIG_EMAIL_SECTION):
+    email_config = get_email_configuration()
+    if args.email:
+        email_config[TO] = args.email
+else:
+    # No email notification
+    logging.error('no email provided to notify operations')
+    exit()
+try:
+    logging.info('starting new backup %s/%s', backup_name, backup_filename)
+    ''' Making backup '''
+    if args.directory_name:
+        # Create zip file from directory
+        shutil.make_archive(TMP_PATH + backup_filename, 'zip', args.directory_name)
+        zip_filename = backup_filename
+        logging.info('data backup file created')
+    if args.databases:
+        # Create backup from databases
+        if db_config[BACKEND] == 'mysql':
+            db_backup_command = 'mysqldump -h ' + db_config[HOST] + ' --port ' + db_config[PORT] + ' -u ' + db_config[
+                USERNAME] + ' -p' + \
+                                db_config[PASSWORD] + ' --all-databases > ' + TMP_PATH + backup_filename + '.sql'
+            os.system(db_backup_command)
+            logging.info('sql backup file created')
+        elif db_config[BACKEND] == 'postgresql':
+            pass
 
-    if db_config[BACKEND] == 'mysql':
-        logging.info('backing up mysql databases')
-        db_backup_command = 'mysqldump -h ' + db_config[HOST] + ' --port ' + db_config[PORT] + ' -u ' + db_config[USERNAME] + ' -p' \
-                  + db_config[PASSWORD] + ' --all-databases > ' + TMP_PATH + 'script.sql'
-        os.system(db_backup_command)
-    elif db_config[BACKEND] == 'postgresql':
-        logging.info('backing up postgresql databases')
-        # TODO backup postgrel databases
+    ''' FTP Connection and upload '''
+    # Connect to ftp server and upload backup file
+    logging.info('connecting to FTP server . . .')
+    ftp = FTP(server_config[HOST], server_config[USERNAME], server_config[PASSWORD], timeout=5)
+    logging.info('login ok')
+    logging.info('uploading file/s . . .')
+    if args.directory_name:
+        ftp.storbinary('STOR ' + backup_filename + '.zip', open(TMP_PATH + zip_filename + '.zip', 'rb'))
+    if args.databases:
+        ftp.storbinary('STOR ' + backup_filename + '.sql', open(TMP_PATH + backup_filename + '.sql', 'rb'))
+    logging.info('file/s uploaded successfully')
 
+    # Make backup rotation based on configuration file ('rotation' option)
+    logging.info('checking rotation backup . . .')
+    if rotation_count != 0:
+        if args.directory_name:
+            rotate_backup(ftp, backup_name, 'zip')
+        if args.databases:
+            rotate_backup(ftp, backup_name, 'sql')
 
-    logging.info('databases backup ready')
+    ftp.quit()
+
+    # TODO Then, abbackup should be able to notify if both (or not) are finished successfully
+    ''' Email notification '''
+    try:
+        logging.info('sending email notification . . .')
+        send_email()
+        logging.info('email sent successfully')
+        logging.info('finished backup %s/%s', backup_name, backup_filename)
+    except MessageError:
+        logging.error('error while sending notification error')
+    except ConnectionRefusedError:
+        logging.error('error while connection with the smtp server:connection refused!')
+
+    os.remove(TMP_PATH + backup_filename + '.zip')
+    logging.info('removed local file (' + backup_filename + '.zip' + ')')
+except ftplib.Error as e:
+    logging.error('error while uploading file')
+    send_email('error while uploading file')
+except socket.timeout:
+    logging.error('ftp connection timeout excedeed')
+    send_email('ftp connection timeout excedeed')
