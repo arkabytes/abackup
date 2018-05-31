@@ -332,3 +332,6 @@ except ftplib.Error as e:
 except socket.timeout:
     logging.error('ftp connection timeout excedeed')
     send_email('ftp connection timeout excedeed')
+except Exception as e:
+    logging.error('error while creating backup: ' + e)
+    send_email('error while creating backup')
