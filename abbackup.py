@@ -3,8 +3,8 @@
 """abbackup
  Create and upload backups to a FTP Server. It also sends an email when task is done
  Author            Santiago Faci <santi@arkabytes.com>
- Version           0.2
- Date              2018-02-16
+ Version           0.2.2
+ Date              2018-07-02
  Python version    3.5
 """
 
@@ -24,7 +24,7 @@ from ftplib import FTP
 from datetime import date, datetime
 
 
-VERSION = '0.2'
+VERSION = '0.2.2'
 CWD = os.getcwd()
 TMP_PATH = '/tmp/'
 CURRENT_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
@@ -112,7 +112,7 @@ def get_db_configuration():
     db_config[USERNAME] = config[CONFIG_DB_SECTION][USERNAME]
     db_config[PASSWORD] = config[CONFIG_DB_SECTION][PASSWORD]
 
-    return email_config
+    return db_config
 
 
 def send_email(message=None):
@@ -146,7 +146,7 @@ def configure_logging(verbose):
 
 def get_backups_list(connection, name, extension):
     """Get a list containing all the filenames for an specified backup name"""
-    return connection.nlst(name + '*.' + extension)
+    return connection.nlst(name + '*' + extension)
 
 
 def rotate_backup(connection, name, extension):
@@ -154,7 +154,7 @@ def rotate_backup(connection, name, extension):
     backups = get_backups_list(connection, name, extension)
     if len(backups) > rotation_count:
         # Remove oldest backup from server
-        logging.info('deleting oldest backup in the server (' + backups[0].split('_')[1].split('.')[0] + ')')
+        logging.info('deleting oldest backup in the server (' + backups[0].split('_')[1].split('.')[0] + ') . . .')
         ftp.delete(backups[0])
 
 
@@ -259,7 +259,11 @@ MAKE BACKUP / DATABASES
 server_config = get_server_configuration()
 # Reading config information about databases (if proceed)
 if args.databases:
-    db_config = get_db_configuration()
+    try:
+        db_config = get_db_configuration()
+    except KeyError:
+        logging.error('invalid database section in configuration file')
+        exit()
 
 # Read email config data (email address can have been introduced manually)
 email_config = None
@@ -275,16 +279,17 @@ try:
     logging.info('starting new backup %s/%s', backup_name, backup_filename)
     ''' Making backup '''
     if args.directory_name:
+        backup_extension = '.zip'
         # Create zip file from directory
         shutil.make_archive(TMP_PATH + backup_filename, 'zip', args.directory_name)
-        zip_filename = backup_filename
         logging.info('data backup file created')
     if args.databases:
+        backup_extension = '.sql'
         # Create backup from databases
         if db_config[BACKEND] == 'mysql':
             db_backup_command = 'mysqldump -h ' + db_config[HOST] + ' --port ' + db_config[PORT] + ' -u ' + db_config[
                 USERNAME] + ' -p' + \
-                                db_config[PASSWORD] + ' --all-databases > ' + TMP_PATH + backup_filename + '.sql'
+                                db_config[PASSWORD] + ' --all-databases > ' + TMP_PATH + backup_filename + backup_extension
             os.system(db_backup_command)
             logging.info('sql backup file created')
         elif db_config[BACKEND] == 'postgresql':
@@ -296,19 +301,15 @@ try:
     ftp = FTP(server_config[HOST], server_config[USERNAME], server_config[PASSWORD], timeout=5)
     logging.info('login ok')
     logging.info('uploading file/s . . .')
-    if args.directory_name:
-        ftp.storbinary('STOR ' + backup_filename + '.zip', open(TMP_PATH + zip_filename + '.zip', 'rb'))
-    if args.databases:
-        ftp.storbinary('STOR ' + backup_filename + '.sql', open(TMP_PATH + backup_filename + '.sql', 'rb'))
+
+    ftp.storbinary('STOR ' + backup_filename + backup_extension, open(TMP_PATH + backup_filename + backup_extension, 'rb'))
+
     logging.info('file/s uploaded successfully')
 
     # Make backup rotation based on configuration file ('rotation' option)
     logging.info('checking rotation backup . . .')
     if rotation_count != 0:
-        if args.directory_name:
-            rotate_backup(ftp, backup_name, 'zip')
-        if args.databases:
-            rotate_backup(ftp, backup_name, 'sql')
+        rotate_backup(ftp, backup_name, backup_extension)
 
     ftp.quit()
 
@@ -324,8 +325,10 @@ try:
     except ConnectionRefusedError:
         logging.error('error while connection with the smtp server:connection refused!')
 
-    os.remove(TMP_PATH + backup_filename + '.zip')
-    logging.info('removed local file (' + backup_filename + '.zip' + ')')
+    # Remove local backup
+    os.remove(TMP_PATH + backup_filename + backup_extension)
+
+    logging.info('removed local file (' + backup_filename + backup_extension + ')')
 except ftplib.Error as e:
     logging.error('error while uploading file')
     send_email('error while uploading file')
