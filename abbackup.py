@@ -245,7 +245,7 @@ if args.list_backups:
     exit()
 
 # User has to select directory_name, databases or both
-if not args.directory_name or not args.databases:
+if not args.directory_name and not args.databases and not args.list_backups:
     logging.error('no operation selected. Nothing to do')
     exit()
 
