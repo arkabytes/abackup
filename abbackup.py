@@ -2,7 +2,7 @@
 
 """abbackup
  Create and upload backups to a FTP Server. It also sends an email when task is done
- Author            Santiago Faci <santi@arkabytes.com>
+ Author            Santiago Faci <santi@codeandcoke.com>
  Version           0.2.2
  Date              2018-07-02
  Python version    3.5
